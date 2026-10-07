@@ -55,7 +55,9 @@ npm install fxapis
 ```
 
 > [!NOTE]
-> This package is not yet published to npm. Until it is, install straight from this repository:
+> This package is not yet published to npm (the release pipeline is set up — see
+> [`.github/workflows/release.yml`](.github/workflows/release.yml) — and is waiting on the
+> one-time manual first publish). Until then, install straight from this repository:
 > `npm install github:FXapis/fxapis-typescript`, or clone it and `npm install && npm run build`,
 > then depend on it with a `file:` reference. `npm install fxapis` above is what it will be once
 > published — nothing else about the API changes when that happens.
