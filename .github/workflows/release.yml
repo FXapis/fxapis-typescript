@@ -1,0 +1,67 @@
+# Publishes to npm via Trusted Publishing (OIDC) -- no NPM_TOKEN exists
+# anywhere, so there is no long-lived publish credential to leak or rotate.
+# npm mints a short-lived token for this run alone, scoped to this repo and
+# this workflow file, and the published package carries a signed provenance
+# attestation (who built it, from which commit and workflow run) -- visible
+# on the npm package page as "Provenance".
+#
+# One-time setup this depends on, done once by a maintainer (not here):
+#   1. `npm publish` once, manually, from a 2FA-enabled npm account -- npm
+#      has no way to pre-claim a brand-new package name for OIDC the way
+#      PyPI does, so the very first publish has to be a human with npm login.
+#   2. On the new package's page: Settings -> Trusted Publisher -> GitHub
+#      Actions -> this repo, workflow file "release.yml", environment "npm".
+# Every release after that needs nothing from anyone's machine.
+name: release
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+      - run: npm install
+      - name: the tag must match package.json's version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg="$(node -p 'require("./package.json").version')"
+          if [ "$tag" != "$pkg" ]; then
+            echo "::error::tag v$tag does not match package.json version $pkg"
+            exit 1
+          fi
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: npm-package
+          path: |
+            dist/
+            package.json
+            README.md
+            LICENSE
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: npm
+      url: https://www.npmjs.com/package/fxapis
+    permissions:
+      id-token: write # the OIDC token Trusted Publishing exchanges for a publish credential
+      contents: read
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          name: npm-package
+      # Requires npm CLI >=11.5.1 (Node 24's bundled npm already is).
+      # No `npm config set //registry.npmjs.org/:_authToken` anywhere --
+      # Trusted Publishing authenticates this step on its own, and
+      # provenance is attached automatically, no --provenance flag needed.
+      - run: npm publish
