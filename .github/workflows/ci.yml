@@ -9,16 +9,16 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        node: ["20", "22", "24"]
+        # Node 20's bundled npm (10.8.x) hits a known resolver bug on a
+        # fresh install tree with no lockfile; the package itself needs only
+        # Node >=18 (see engines in package.json) — this matrix tests the
+        # versions whose npm is not affected.
+        node: ["22", "24"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
-      # Node 20's bundled npm (10.8.x) hits a known bug resolving a fresh
-      # tree with no lockfile ("Cannot read properties of null (reading
-      # 'edgesOut')"); npm 22/24 ship a fixed npm. Harmless on 22/24.
-      - run: npm install -g npm@latest
       - run: npm install
       - run: npm run typecheck
       - run: npm test
