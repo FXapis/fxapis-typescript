@@ -1,0 +1,67 @@
+{
+  "name": "fxapis",
+  "version": "0.1.0",
+  "description": "MetaTrader 5 (MT5) REST API client for Node.js and TypeScript: trade MT5 accounts over HTTPS with no terminal, VPS or EA. Copy trading, click-to-trade, multi-account orders.",
+  "keywords": [
+    "mt5",
+    "mt5-api",
+    "metatrader",
+    "metatrader5",
+    "metatrader-5",
+    "metatrader 5 api",
+    "trading-api",
+    "forex",
+    "forex-api",
+    "copy-trading",
+    "trade-copier",
+    "algorithmic-trading",
+    "rest-api",
+    "sdk",
+    "typescript"
+  ],
+  "homepage": "https://docs.fxapis.com",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/FXapis/fxapis-typescript.git"
+  },
+  "bugs": {
+    "url": "https://github.com/FXapis/fxapis-typescript/issues"
+  },
+  "license": "MIT",
+  "author": "El Wizard <mago@elwizard.net>",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist/index.js",
+    "dist/index.d.ts",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.3"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
