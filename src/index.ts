@@ -25,32 +25,60 @@ export function newIdempotencyKey(): string {
   return crypto.randomUUID();
 }
 
+/** Codes the API documents as safe to send again, as they are, after a short wait. */
+const RETRYABLE_CODES = new Set([
+  "SEND_FAILED",
+  "ACCOUNT_NOT_READY",
+  "NO_RUNTIME",
+  "RATE_LIMITED",
+  "IDEMPOTENCY_IN_FLIGHT",
+  "ACCOUNT_EXECUTING",
+  "ACCOUNT_LEASED_ELSEWHERE",
+  "SECRET_STORE_UNAVAILABLE",
+  "SCHEDULER_FAILED",
+  "RESTART_FAILED",
+  "MT5_UNAVAILABLE",
+  "SYMBOLS_UNAVAILABLE",
+  "SESSIONS_NOT_SYNCED",
+  "PROVIDER_ERROR",
+  "TOO_SOON",
+  "INTERNAL_ERROR",
+  "GATEWAY_ERROR",
+]);
+
 export class FxapisError extends Error {
   readonly status: number;
   readonly code: string;
   readonly requestId: string | undefined;
   readonly details: unknown;
+  /** Seconds to wait before retrying, from the `Retry-After` header — set on `RATE_LIMITED`. */
+  readonly retryAfter: number | undefined;
 
-  constructor(status: number, body: { error?: { code?: string; message?: string; details?: unknown }; requestId?: string }) {
+  constructor(
+    status: number,
+    body: { error?: { code?: string; message?: string; details?: unknown }; requestId?: string },
+    retryAfter?: number
+  ) {
     super(body.error?.message ?? `request failed with ${status}`);
     this.name = "FxapisError";
     this.status = status;
     this.code = body.error?.code ?? "UNKNOWN";
     this.requestId = body.requestId;
     this.details = body.error?.details;
+    this.retryAfter = retryAfter;
   }
 
   /**
    * Whether sending the same request again is safe.
    *
    * False for `ORDER_UNRESOLVED`, and that is the important one: the order
-   * may be live at the broker. Poll it instead of resending.
+   * may be live at the broker. Poll it instead of resending. On anything that
+   * trades, retry with the same `idempotencyKey` — that is what makes it safe.
+   * `ACCOUNT_NOT_READY` is retryable unless the account needs its owner
+   * (`invalid_credentials`, `needs_2fa`, …): check its state before looping.
    */
   get retryable(): boolean {
-    if (this.code === "SEND_FAILED") return true;
-    // Nothing was sent: the account could not come online in time. Resend with the same key.
-    if (this.code === "ACCOUNT_NOT_READY" || this.code === "NO_RUNTIME") return true;
-    if (this.code === "RATE_LIMITED" || this.code === "IDEMPOTENCY_IN_FLIGHT") return true;
+    if (RETRYABLE_CODES.has(this.code)) return true;
     const detail = Array.isArray(this.details) ? (this.details[0] as { retryable?: boolean } | undefined) : undefined;
     return detail?.retryable === true;
   }
@@ -84,8 +112,25 @@ export class Fxapis {
     });
 
     const text = await response.text();
-    const parsed = text ? JSON.parse(text) : {};
-    if (!response.ok) throw new FxapisError(response.status, parsed);
+    let parsed;
+    try {
+      parsed = text ? JSON.parse(text) : {};
+    } catch {
+      // Not the API's own answer: a proxy or load balancer between here and
+      // fxapis (a 502/504 page). The request may or may not have arrived, so
+      // a trade must be retried with the same idempotencyKey, never a new one.
+      parsed = {
+        error: {
+          code: response.ok ? "INVALID_RESPONSE" : "GATEWAY_ERROR",
+          message: `HTTP ${response.status} without an fxapis response. Retry with the same idempotencyKey.`,
+        },
+      };
+      if (response.ok) throw new FxapisError(response.status, parsed);
+    }
+    if (!response.ok) {
+      const wait = Number(response.headers.get("retry-after"));
+      throw new FxapisError(response.status, parsed, Number.isFinite(wait) && wait > 0 ? wait : undefined);
+    }
     // A paginated list is still returned as its array, with the page attached
     // out of the way (not enumerable, so it never shows up in JSON or a
     // spread): `const orders = await fx.getOrders(); orders.page?.nextCursor`.
@@ -253,7 +298,7 @@ export class Fxapis {
   }
 
   /**
-   * Place a limit, stop or stop-limit order — A success here means **accepted and waiting**, not filled — the broker answers `10008 PLACED` and the order sits in `accepted` until it triggers.
+   * Place a limit, stop or stop-limit order — A success here means **placed and waiting**, not filled — the broker answers `10008 PLACED` and the order is `working` until it triggers.
    *
    * Send `options.idempotencyKey` (e.g. `newIdempotencyKey()`) and reuse it on a retry: the same key returns the first answer instead of placing a second order.
    */
@@ -285,7 +330,7 @@ export class Fxapis {
     return this.request("GET", `/v1/orders`, undefined, options);
   }
 
-  /** Fetch one order — The authoritative record of one order: what was asked for, what the broker returned, and its own return code unmodified. Poll this after an `ORDER_UNRESOLVED` response — the order moves out of `unknown` as soon as we have confirmed the result with the broker. */
+  /** Fetch one order — The authoritative record of one order: what was asked for, what the broker returned, and its own return code unmodified. Poll this after an `ORDER_UNRESOLVED` response — an opening order moves out of `unknown` as soon as we have confirmed the result with the broker; a close, stop change or cancel stays `unknown`, with a `stateDetail` saying what to check at the broker. */
   async getOrdersById(id: string, options: RequestOptions = {}) {
     return this.request("GET", `/v1/orders/${encodeURIComponent(id)}`, undefined, options);
   }
@@ -304,7 +349,7 @@ export class Fxapis {
     return this.request("GET", `/v1/accounts/${encodeURIComponent(id)}/deals`, undefined, options);
   }
 
-  /** Confirm pending results with the broker now — Confirms the result of every order on this account still in `unknown`, and brings its deals and positions up to date with the broker. */
+  /** Confirm pending results with the broker now — Confirms the result of every opening order on this account still in `unknown`, and brings its deals and positions up to date with the broker. A close, stop change or cancel in `unknown` is not settled from deal history — its `stateDetail` says to check the position or order at the broker. */
   async postAccountsByIdReconcile(id: string, options: RequestOptions = {}) {
     return this.request("POST", `/v1/accounts/${encodeURIComponent(id)}/reconcile`, undefined, options);
   }

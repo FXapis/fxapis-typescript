@@ -156,6 +156,44 @@ describe("errors", () => {
     expect(error.retryable).toBe(true);
   });
 
+  it("turns a gateway's non-JSON error page into a retryable FxapisError, not a SyntaxError", async () => {
+    // A proxy between the client and fxapis (a 502/504 page). The request may
+    // or may not have arrived, so the answer is: retry with the same key.
+    const fetchImpl = async () => new Response("<html>502 Bad Gateway</html>", { status: 502, headers: { "content-type": "text/html" } });
+    const error = (await withFetch(fetchImpl, () =>
+      new Fxapis("k").postAccountsByIdOrdersMarket("a", {}, { idempotencyKey: "k1" }).catch((e: unknown) => e)
+    )) as FxapisError;
+    expect(error).toBeInstanceOf(FxapisError);
+    expect(error.status).toBe(502);
+    expect(error.code).toBe("GATEWAY_ERROR");
+    expect(error.retryable).toBe(true);
+  });
+
+  it("reports a successful status that is not JSON, rather than returning nothing", async () => {
+    const fetchImpl = async () => new Response("not json", { status: 200 });
+    const error = (await withFetch(fetchImpl, () => new Fxapis("k").getAccounts().catch((e: unknown) => e))) as FxapisError;
+    expect(error).toBeInstanceOf(FxapisError);
+    expect(error.code).toBe("INVALID_RESPONSE");
+  });
+
+  it("says how long to wait when rate limited", async () => {
+    const fetchImpl = async () =>
+      new Response(JSON.stringify({ error: { code: "RATE_LIMITED", message: "slow down" } }), {
+        status: 429,
+        headers: { "content-type": "application/json", "retry-after": "7" },
+      });
+    const error = (await withFetch(fetchImpl, () => new Fxapis("k").getAccounts().catch((e: unknown) => e))) as FxapisError;
+    expect(error.retryAfter).toBe(7);
+  });
+
+  it("calls the documented transient failures retryable", async () => {
+    for (const code of ["INTERNAL_ERROR", "ACCOUNT_LEASED_ELSEWHERE", "SCHEDULER_FAILED", "MT5_UNAVAILABLE", "SECRET_STORE_UNAVAILABLE"]) {
+      const { fetchImpl } = stub(503, { error: { code, message: "transient" } });
+      const error = (await withFetch(fetchImpl, () => new Fxapis("k").getAccounts().catch((e: unknown) => e))) as FxapisError;
+      expect(error.retryable, code).toBe(true);
+    }
+  });
+
   it("does not retry a quota refusal", async () => {
     // A bigger plan or a new month, not a retry.
     const { fetchImpl } = stub(402, { error: { code: "QUOTA_EXCEEDED", message: "over plan" } });

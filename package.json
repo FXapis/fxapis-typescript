@@ -1,6 +1,6 @@
 {
   "name": "fxapis",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "MetaTrader 5 (MT5) REST API client for Node.js and TypeScript: trade MT5 accounts over HTTPS with no terminal, VPS or EA. Copy trading, click-to-trade, multi-account orders.",
   "keywords": [
     "mt5",
