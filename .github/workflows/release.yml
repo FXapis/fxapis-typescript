@@ -10,8 +10,13 @@
 #      has no way to pre-claim a brand-new package name for OIDC the way
 #      PyPI does, so the very first publish has to be a human with npm login.
 #   2. On the new package's page: Settings -> Trusted Publisher -> GitHub
-#      Actions -> this repo, workflow file "release.yml", environment "npm".
-# Every release after that needs nothing from anyone's machine.
+#      Actions -> this repo, workflow file "release.yml", environment "npm",
+#      with "Allow npm publish" left unchecked.
+#
+# Staged publishing: this workflow only *stages* a version (`npm stage
+# publish`). It goes live when a maintainer approves it on npmjs.com (or
+# `npm stage approve <id>`) with their own 2FA -- so getting into this GitHub
+# org is not enough, on its own, to put a release on npm.
 name: release
 
 on:
@@ -60,7 +65,8 @@ jobs:
       - uses: actions/download-artifact@v5
         with:
           name: npm-package
-      # Requires npm CLI >=11.5.1 (Node 24's bundled npm already is).
+      # `npm stage` needs a newer CLI than Node 24 bundles.
+      - run: npm install -g npm@latest
       # No `npm config set //registry.npmjs.org/:_authToken` anywhere --
       # Trusted Publishing authenticates this step on its own, and
       # provenance is attached automatically, no --provenance flag needed.
@@ -75,4 +81,4 @@ jobs:
             echo "skip=true" >> "$GITHUB_OUTPUT"
           fi
       - if: steps.published.outputs.skip != 'true'
-        run: npm publish
+        run: npm stage publish
