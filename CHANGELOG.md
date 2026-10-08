@@ -8,6 +8,8 @@ while the version is `0.x`, a minor release (`0.2.0`) may change the API and a p
 
 ## [0.1.2] — 2026-10-08
 
+**Not published to npm** — the release workflow failed before publishing. These changes shipped in 0.1.3.
+
 - A proxy's non-JSON error page (a 502 or 504) is now an FxapisError with code GATEWAY_ERROR, retryable with the same idempotencyKey — no longer a SyntaxError.
 - FxapisError.retryAfter: the seconds from Retry-After, set on RATE_LIMITED.
 - retryable is true for every code the API documents as transient, including INTERNAL_ERROR, ACCOUNT_LEASED_ELSEWHERE, SCHEDULER_FAILED and MT5_UNAVAILABLE.
