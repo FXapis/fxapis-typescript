@@ -6,6 +6,11 @@ while the version is `0.x`, a minor release (`0.2.0`) may change the API and a p
 
 ## [Unreleased]
 
+## [0.1.3] — 2026-10-08
+
+- The changes of 0.1.2, which never reached npm: GATEWAY_ERROR for a proxy's non-JSON error page, FxapisError.retryAfter, and retryable for every documented transient code.
+- The release workflow publishes the tested build as-is.
+
 ## [0.1.2] — 2026-10-08
 
 **Not published to npm** — the release workflow failed before publishing. These changes shipped in 0.1.3.
