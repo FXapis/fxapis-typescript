@@ -10,6 +10,7 @@
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-22D3D6?style=flat-square)](LICENSE)
 [![ci](https://img.shields.io/github/actions/workflow/status/FXapis/fxapis-typescript/ci.yml?branch=main&style=flat-square&label=ci)](https://github.com/FXapis/fxapis-typescript/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/fxapis?style=flat-square&color=22D3D6)](https://www.npmjs.com/package/fxapis)
 [![release](https://img.shields.io/github/v/release/FXapis/fxapis-typescript?style=flat-square&color=22D3D6)](https://github.com/FXapis/fxapis-typescript/releases)
 [![Node.js](https://img.shields.io/badge/node-%E2%89%A518-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
@@ -29,9 +30,6 @@ You run **no MetaTrader terminal, no Windows VPS and no EA**. fxapis runs the MT
 - **ESM**, with full TypeScript declarations
 
 MT5 only (MT4 is not supported). Call it from your **backend** — never ship an API key to a browser or mobile app.
-
-> [!IMPORTANT]
-> Not yet published to npm — see [Installation](#installation).
 
 ## Table of contents
 
@@ -53,14 +51,6 @@ MT5 only (MT4 is not supported). Call it from your **backend** — never ship an
 ```bash
 npm install fxapis
 ```
-
-> [!NOTE]
-> This package is not yet published to npm (the release pipeline is set up — see
-> [`.github/workflows/release.yml`](.github/workflows/release.yml) — and is waiting on the
-> one-time manual first publish). Until then, install straight from this repository:
-> `npm install github:FXapis/fxapis-typescript`, or clone it and `npm install && npm run build`,
-> then depend on it with a `file:` reference. `npm install fxapis` above is what it will be once
-> published — nothing else about the API changes when that happens.
 
 Create an API key in the console at [fxapis.com](https://fxapis.com).
 
