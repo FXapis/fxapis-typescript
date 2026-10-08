@@ -226,7 +226,8 @@ There are no event webhooks yet — poll. See [`node/copy-trader.ts`](https://gi
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) — in short, `src/index.ts` is generated from the OpenAPI
 spec; the hand-written parts (the `Fxapis` class, `FxapisError`, idempotency helpers) are where a
-pull request helps most.
+pull request helps most. What changed in each version is in [CHANGELOG.md](CHANGELOG.md), and how a
+version is released in [RELEASING.md](RELEASING.md).
 
 ## Support
 
