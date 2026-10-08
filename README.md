@@ -130,7 +130,7 @@ try {
 }
 ```
 
-`FxapisError` carries `status`, `code` (stable — match on it), `message` (for humans), `requestId` (quote it to support), `details`, and `retryable`, which is `false` for `ORDER_UNRESOLVED` whatever else is true. The client never retries on its own: that decision stays with you.
+`FxapisError` carries `status`, `code` (stable — match on it), `message` (for humans), `requestId` (quote it to support), `details`, `retryAfter` (seconds, on `RATE_LIMITED`), and `retryable`, which is `false` for `ORDER_UNRESOLVED` whatever else is true. A proxy's error page (a 502 or 504 that is not an fxapis answer) arrives as `GATEWAY_ERROR`, never as a JSON parse error. The client never retries on its own: that decision stays with you.
 
 ## Methods
 
@@ -203,7 +203,8 @@ There are no event webhooks yet — poll. See [`node/copy-trader.ts`](https://gi
 | `ACCOUNT_NOT_READY` / `NO_RUNTIME` | The account isn't online | Bring it online, wait for `ready`, retry with the same key |
 | `ORDER_REJECTED` | The broker refused it; nothing opened | Show `message` to the user; retry with a **new** key only if `retryable` |
 | `MISSING_SCOPE` | The API key doesn't allow this call | Ask for a key with the right scope — don't work around it |
-| `RATE_LIMITED` | Too many requests | Wait `retryAfterSeconds`, then retry once |
+| `RATE_LIMITED` | Too many requests | Wait `retryAfter` seconds, then retry once |
+| `GATEWAY_ERROR` | A proxy between you and fxapis answered — the request may or may not have arrived | Retry with the **same** `idempotencyKey`; if it was an order, check `getOrders` before using a new one |
 
 ## Good to know
 
