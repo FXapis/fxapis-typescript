@@ -20,13 +20,14 @@
 
 ---
 
-Connect an MT5 account once, then place market and pending orders, close and modify positions, read positions and deal history, and send one trade to many accounts at once — over plain HTTPS.
+Connect an MT5 account once, then place market and pending orders, close and modify positions, read positions and deal history, and send one trade to many accounts at once — over plain HTTPS. Webhooks tell your server when an order fills, a position closes or an account goes offline.
 
 You run **no MetaTrader terminal, no Windows VPS and no EA**. fxapis runs the MT5 terminals in its cloud (EU, Amsterdam) and puts an API in front of them. Use it for **copy trading** and trade copiers, **click-to-trade** signal apps, trading bots, and back-office tools that manage many MT5 accounts.
 
 - **Zero dependencies** — uses the built-in `fetch` (Node.js 18+, Deno, Bun, edge runtimes)
 - **Generated from the [OpenAPI spec](https://docs.fxapis.com/api-reference)**: one method per endpoint, nothing missing, nothing hand-drifted
 - **Typed errors** with a stable `code` and an honest `retryable`
+- **`verifyWebhook()`** checks every webhook delivery's signature, with Web Crypto
 - **ESM**, with full TypeScript declarations
 
 MT5 only (MT4 is not supported). Call it from your **backend** — never ship an API key to a browser or mobile app.
@@ -39,6 +40,7 @@ MT5 only (MT4 is not supported). Call it from your **backend** — never ship an
 - [Methods](#methods)
 - [Pagination](#pagination)
 - [Copy trading in one call](#copy-trading-in-one-call)
+- [Webhooks](#webhooks)
 - [Error handling reference](#error-handling-reference)
 - [Good to know](#good-to-know)
 - [Related fxapis repositories](#related-fxapis-repositories)
@@ -159,6 +161,9 @@ Method names are generated from the path: `POST /v1/accounts/{id}/orders/market`
 | Confirm unknown results now | `postAccountsByIdReconcile(id)` | `POST …/reconcile` |
 | Multi-account order | `postExecutionwaves(body, { idempotencyKey })` | `POST /v1/execution-waves` |
 | Follow / list / cancel it | `getExecutionwavesById(id)`, `getExecutionwaves()`, `postExecutionwavesByIdCancel(id)` | `/v1/execution-waves…` |
+| Webhook endpoints | `getWebhooks()`, `postWebhooks(body)`, `getWebhooksById(id)`, `patchWebhooksById(id, body)`, `deleteWebhooksById(id)` | `/v1/webhooks…` |
+| Enable, disable, rotate, test | `postWebhooksByIdEnable(id)`, `…Disable`, `…Rotate`, `…Test` | `POST /v1/webhooks/{id}/…` |
+| Delivery log, redeliver | `getWebhooksByIdDeliveries(id)`, `postWebhooksByIdDeliveriesByEventIdRedeliver(id, eventId)` | `/v1/webhooks/{id}/deliveries…` |
 | Usage this month | `getBillingUsage()`, `getBillingUsageDaily()` | `GET /v1/billing/usage[/daily]` |
 
 API keys, members and billing are covered too — every endpoint in the [API reference](https://docs.fxapis.com/api-reference) has a method.
@@ -192,7 +197,41 @@ const wave = await fx.postExecutionwaves(
 // Poll fx.getExecutionwavesById(wave.id) until state is "settled" (or "cancelled" / "abandoned").
 ```
 
-There are no event webhooks yet — poll. See [`node/copy-trader.ts`](https://github.com/FXapis/fxapis-examples/tree/main/node) in the examples repo.
+To react to the master's trades as they happen rather than polling, subscribe a webhook to `position.opened` and `position.closed` — see below. [`node/copy-trader.ts`](https://github.com/FXapis/fxapis-examples/tree/main/node) in the examples repo shows the polling version.
+
+## Webhooks
+
+Register an HTTPS endpoint and fxapis POSTs a signed event to it when something happens: an order filled, rejected or left unresolved, a position opened or closed, an account changing state, a multi-account order finishing.
+
+```ts
+const endpoint = await fx.postWebhooks({
+  url: "https://example.com/fxapis/webhooks",
+  events: ["order.filled", "position.closed"], // leave out for every event
+});
+// endpoint.secret (whsec_…) is returned here once — store it with your other secrets.
+await fx.postWebhooksByIdTest(endpoint.id); // a webhook.test event, within seconds
+```
+
+Check every delivery before trusting it. Pass the body exactly as it arrived — the raw string, before JSON parsing:
+
+```ts
+import { verifyWebhook, WebhookVerificationError } from "fxapis";
+
+app.post("/fxapis/webhooks", express.raw({ type: "application/json" }), async (req, res) => {
+  let event;
+  try {
+    event = await verifyWebhook(req.body.toString("utf8"), req.header("fxapis-signature"), process.env.FXAPIS_WEBHOOK_SECRET!);
+  } catch (err) {
+    if (err instanceof WebhookVerificationError) return res.sendStatus(400);
+    throw err;
+  }
+  if (await alreadyHandled(event.id)) return res.sendStatus(200); // deliveries can repeat
+  await handle(event); // event.type, event.data — the resource as the API returns it
+  res.sendStatus(200);
+});
+```
+
+`verifyWebhook` rejects a signature more than 5 minutes old (`{ toleranceSec }` to change it), and during a secret rotation accepts either secret. It uses Web Crypto, so it also runs on Deno, Bun and edge runtimes. Answer within 10 seconds; failed deliveries are retried for about 45 hours. Event types, payloads, retries and rotation: the [webhooks guide](https://docs.fxapis.com/guides/webhooks).
 
 ## Error handling reference
 
