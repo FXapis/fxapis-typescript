@@ -6,6 +6,11 @@ while the version is `0.x`, a minor release (`0.2.0`) may change the API and a p
 
 ## [Unreleased]
 
+## [0.1.4] — 2026-10-11
+
+- Webhooks: methods for the /v1/webhooks endpoints — list, create, read, update, enable, disable, rotate the secret, send a test event, delete, read deliveries and redeliver.
+- verifyWebhook(rawBody, signatureHeader, secret) checks a delivery's fxapis-signature header and returns the event; it throws WebhookVerificationError when the signature is missing, malformed, too old or does not match. Runs on Web Crypto: Node 18+, Deno, Bun, edge runtimes and browsers.
+
 ## [0.1.3] — 2026-10-08
 
 - The changes of 0.1.2, which never reached npm: GATEWAY_ERROR for a proxy's non-JSON error page, FxapisError.retryAfter, and retryable for every documented transient code.

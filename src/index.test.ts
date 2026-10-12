@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { Fxapis, FxapisError, Orderwright, OrderwrightError, newIdempotencyKey } from "./index.ts";
+import { createHmac } from "node:crypto";
+import { Fxapis, FxapisError, Orderwright, OrderwrightError, newIdempotencyKey, verifyWebhook, WebhookVerificationError } from "./index.ts";
 
 /**
  * The generated client.
@@ -219,5 +220,29 @@ describe("the names from before fxapis", () => {
   it("still work, as aliases of the new ones", () => {
     expect(Orderwright).toBe(Fxapis);
     expect(OrderwrightError).toBe(FxapisError);
+  });
+});
+
+describe("verifyWebhook", () => {
+  const secret = "whsec_test";
+  const body = JSON.stringify({ id: "e1", type: "order.filled", createdAt: "2026-10-08T12:00:00.000Z", data: { id: "o1" } });
+  const t = 1_791_400_000;
+  const sig = (s: string, at = t, b = body) => createHmac("sha256", s).update(`${at}.${b}`).digest("hex");
+
+  it("returns the event when the signature matches", async () => {
+    const event = await verifyWebhook(body, `t=${t},v1=${sig(secret)}`, secret, { now: t * 1000 });
+    expect(event).toMatchObject({ id: "e1", type: "order.filled", data: { id: "o1" } });
+  });
+
+  it("accepts either signature during a rotation", async () => {
+    const header = `t=${t},v1=${sig("whsec_new")},v1=${sig(secret)}`;
+    await expect(verifyWebhook(body, header, secret, { now: t * 1000 })).resolves.toMatchObject({ id: "e1" });
+  });
+
+  it("refuses a wrong secret, a changed body, an old timestamp, or no header", async () => {
+    await expect(verifyWebhook(body, `t=${t},v1=${sig("whsec_other")}`, secret, { now: t * 1000 })).rejects.toBeInstanceOf(WebhookVerificationError);
+    await expect(verifyWebhook(`${body} `, `t=${t},v1=${sig(secret)}`, secret, { now: t * 1000 })).rejects.toThrow(/does not match/);
+    await expect(verifyWebhook(body, `t=${t},v1=${sig(secret)}`, secret, { now: (t + 301) * 1000 })).rejects.toThrow(/tolerance/);
+    await expect(verifyWebhook(body, undefined, secret)).rejects.toThrow(/missing/);
   });
 });

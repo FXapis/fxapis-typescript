@@ -84,6 +84,64 @@ export class FxapisError extends Error {
   }
 }
 
+/** A webhook event as fxapis sends it. Deduplicate on id: an event can arrive more than once. */
+export type WebhookEvent<T = Record<string, unknown>> = { id: string; type: string; createdAt: string; data: T };
+
+export class WebhookVerificationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "WebhookVerificationError";
+  }
+}
+
+/**
+ * Checks a webhook delivery's fxapis-signature header and returns its event.
+ *
+ * Pass the body exactly as it arrived — the raw string, before JSON parsing —
+ * and the endpoint's whsec_ secret. Throws WebhookVerificationError when the
+ * signature does not match, or is older than toleranceSec (300 by default).
+ * During a secret rotation the header carries two signatures; either is enough.
+ * Uses Web Crypto, so it runs in Node 18+, Deno, Bun, edge runtimes and browsers.
+ */
+export async function verifyWebhook(
+  rawBody: string,
+  signatureHeader: string | null | undefined,
+  secret: string,
+  options: { toleranceSec?: number; now?: number } = {}
+): Promise<WebhookEvent> {
+  if (!signatureHeader) throw new WebhookVerificationError("missing fxapis-signature header");
+  let timestamp = Number.NaN;
+  const signatures: string[] = [];
+  for (const part of signatureHeader.split(",")) {
+    const [key, value] = part.trim().split("=", 2);
+    if (key === "t") timestamp = Number(value);
+    else if (key === "v1" && value) signatures.push(value);
+  }
+  if (!Number.isInteger(timestamp) || signatures.length === 0) throw new WebhookVerificationError("malformed fxapis-signature header");
+  const now = Math.floor((options.now ?? Date.now()) / 1000);
+  if (Math.abs(now - timestamp) > (options.toleranceSec ?? 300)) {
+    throw new WebhookVerificationError("signature timestamp is outside the tolerance");
+  }
+  const expected = await hmacHex(secret, timestamp + "." + rawBody);
+  if (!signatures.some((s) => sameText(s, expected))) throw new WebhookVerificationError("signature does not match");
+  return JSON.parse(rawBody) as WebhookEvent;
+}
+
+async function hmacHex(secret: string, message: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey("raw", encoder.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const signature = new Uint8Array(await crypto.subtle.sign("HMAC", key, encoder.encode(message)));
+  return Array.from(signature, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/** Constant time for equal lengths, so timing does not say how much of a guess was right. */
+function sameText(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
 export class Fxapis {
   private readonly baseUrl: string;
   private readonly apiKey: string;
@@ -499,6 +557,65 @@ export class Fxapis {
    */
   async getAlerthooksByIdDeliveries(id: string, options: RequestOptions = {}) {
     return this.request("GET", `/v1/alert-hooks/${encodeURIComponent(id)}/deliveries`, undefined, options);
+  }
+
+  /** List webhook endpoints — Newest first. Deleted endpoints are not listed. Secrets are never returned here. */
+  async getWebhooks(options: RequestOptions = {}) {
+    return this.request("GET", `/v1/webhooks`, undefined, options);
+  }
+
+  /** Create a webhook endpoint — Events are POSTed to `url` as JSON — `{ id, type, createdAt, data }` — signed in the `fxapis-signature` header with the returned `secret`. **The secret is returned once**, here. Retried for about 45 hours on failure; switched off after 20 failures in a row. Up to 10 endpoints per workspace. */
+  async postWebhooks(body: unknown, options: RequestOptions = {}) {
+    return this.request("POST", `/v1/webhooks`, body, options);
+  }
+
+  /** Read one webhook endpoint — With its health: the last delivery, failures in a row, and why it was switched off if it was. */
+  async getWebhooksById(id: string, options: RequestOptions = {}) {
+    return this.request("GET", `/v1/webhooks/${encodeURIComponent(id)}`, undefined, options);
+  }
+
+  /** Change a webhook endpoint — Change its `url`, `events` or `description`. The secret stays the same. */
+  async patchWebhooksById(id: string, body: unknown, options: RequestOptions = {}) {
+    return this.request("PATCH", `/v1/webhooks/${encodeURIComponent(id)}`, body, options);
+  }
+
+  /** Delete a webhook endpoint — Nothing more is sent to it, including retries in progress. Cannot be undone. */
+  async deleteWebhooksById(id: string, options: RequestOptions = {}) {
+    return this.request("DELETE", `/v1/webhooks/${encodeURIComponent(id)}`, undefined, options);
+  }
+
+  /** Enable a webhook endpoint — Events are sent again from the next one, and the failure count starts from zero. Events already queued to it before it was switched off can be redelivered from the delivery log; events recorded while it was off never reached that log and can't be redelivered. Safe to repeat. */
+  async postWebhooksByIdEnable(id: string, options: RequestOptions = {}) {
+    return this.request("POST", `/v1/webhooks/${encodeURIComponent(id)}/enable`, undefined, options);
+  }
+
+  /** Disable a webhook endpoint — Events stop being sent to it until it is enabled again. Safe to repeat. */
+  async postWebhooksByIdDisable(id: string, options: RequestOptions = {}) {
+    return this.request("POST", `/v1/webhooks/${encodeURIComponent(id)}/disable`, undefined, options);
+  }
+
+  /** Rotate a webhook endpoint's secret — Issues a new `secret`, returned **once**. For 24 hours every delivery is signed with both the new and the old secret — two `v1=` values in `fxapis-signature` — so you can deploy the new one without missing an event. */
+  async postWebhooksByIdRotate(id: string, options: RequestOptions = {}) {
+    return this.request("POST", `/v1/webhooks/${encodeURIComponent(id)}/rotate`, undefined, options);
+  }
+
+  /** Send a test event — Sends a `webhook.test` event to this endpoint only, within a few seconds. Check the delivery log for the result. */
+  async postWebhooksByIdTest(id: string, options: RequestOptions = {}) {
+    return this.request("POST", `/v1/webhooks/${encodeURIComponent(id)}/test`, undefined, options);
+  }
+
+  /**
+   * Delivery attempts to a webhook endpoint — Every attempt, newest first, kept 30 days: what was sent, what your endpoint answered, and how long it took.
+   *
+   * Query (`options.query`): `status`, `limit`, `cursor`.
+   */
+  async getWebhooksByIdDeliveries(id: string, options: RequestOptions = {}) {
+    return this.request("GET", `/v1/webhooks/${encodeURIComponent(id)}/deliveries`, undefined, options);
+  }
+
+  /** Redeliver an event — Queues the event to this endpoint again, with a fresh retry schedule. Same event id, so your deduplication still works. */
+  async postWebhooksByIdDeliveriesByEventIdRedeliver(id: string, eventId: string, options: RequestOptions = {}) {
+    return this.request("POST", `/v1/webhooks/${encodeURIComponent(id)}/deliveries/${encodeURIComponent(eventId)}/redeliver`, undefined, options);
   }
 
   /** List this workspace's members — Everyone in this workspace, with their role and when they joined. Removed members are not listed. */
