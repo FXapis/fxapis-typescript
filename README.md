@@ -166,7 +166,28 @@ Method names are generated from the path: `POST /v1/accounts/{id}/orders/market`
 | Delivery log, redeliver | `getWebhooksByIdDeliveries(id)`, `postWebhooksByIdDeliveriesByEventIdRedeliver(id, eventId)` | `/v1/webhooks/{id}/deliveries…` |
 | Usage this month | `getBillingUsage()`, `getBillingUsageDaily()` | `GET /v1/billing/usage[/daily]` |
 
-API keys, members and billing are covered too — every endpoint in the [API reference](https://docs.fxapis.com/api-reference) has a method.
+Billing reads (subscription, invoices) have methods too. Managing your team (members and invitations) is done in the console only, so the SDK has no methods for it.
+
+### Admin keys: manage API keys from code
+
+From 0.2.0, API-key management lives under `fx.admin.keys` and needs an **admin key** (`fx_admin_…`) rather than an ordinary key. The workspace owner makes admin keys in the console under **API keys → Admin keys**, optionally limited to IP addresses and given an expiry. An admin key can only list, create, change and revoke ordinary keys; it cannot trade or read account data itself, but the keys it creates can.
+
+```ts
+import { Fxapis } from "fxapis";
+
+const admin = new Fxapis(process.env.FXAPIS_ADMIN_KEY!);
+
+const created = await admin.admin.keys.create({
+  name: "trader-42",
+  scopes: ["trading:execute", "trading:read"],
+  limits: { maxVolume: "1.00", accountIds: [accountId] },
+});
+// created.key is shown once — hand it to the trader's integration now.
+
+await admin.admin.keys.revoke(created.id); // when the evaluation ends
+```
+
+An ordinary key used on these methods gets `403 ADMIN_KEY_REQUIRED` as an `FxapisError`. See [Admin keys](https://docs.fxapis.com/authentication) in the docs.
 
 ### Pagination
 
