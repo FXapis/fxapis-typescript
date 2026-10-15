@@ -142,13 +142,80 @@ function sameText(a: string, b: string): boolean {
   return diff === 0;
 }
 
+/** How an admin group reaches the API: through the client's own request, with the client's key. */
+type Send = (method: string, path: string, body: unknown, options: RequestOptions) => Promise<any>;
+
+/**
+ * `fx.admin.keys`. Needs an admin key (`fx_admin_…`), made by the workspace owner in the
+ * console; an ordinary key is refused with `ADMIN_KEY_REQUIRED`.
+ */
+export class FxapisAdminKeys {
+  private readonly send: Send;
+
+  constructor(send: Send) {
+    this.send = send;
+  }
+
+  /**
+   * List this workspace's keys — Newest first, revoked keys included — a revocation is history worth seeing.
+   *
+   * Needs an admin key (`fx_admin_…`); an ordinary key is refused with `ADMIN_KEY_REQUIRED` (an `FxapisError`, status 403).
+   */
+  async list(options: RequestOptions = {}) {
+    return this.send("GET", `/v1/api-keys`, undefined, options);
+  }
+
+  /**
+   * Create a key — Returns the key in `key`, **once**. We cannot show a key again after creation, or recover it. A lost key is replaced, not recovered.
+   *
+   * Needs an admin key (`fx_admin_…`); an ordinary key is refused with `ADMIN_KEY_REQUIRED` (an `FxapisError`, status 403).
+   */
+  async create(body: unknown, options: RequestOptions = {}) {
+    return this.send("POST", `/v1/api-keys`, body, options);
+  }
+
+  /**
+   * Read one key — A key's name, scopes, environment label, hint and when it was last used — never the key itself, which is shown only once, when it is created.
+   *
+   * Needs an admin key (`fx_admin_…`); an ordinary key is refused with `ADMIN_KEY_REQUIRED` (an `FxapisError`, status 403).
+   */
+  async get(id: string, options: RequestOptions = {}) {
+    return this.send("GET", `/v1/api-keys/${encodeURIComponent(id)}`, undefined, options);
+  }
+
+  /**
+   * Rename or re-scope a key — New scopes replace the old ones and apply from the key's next request. The key itself does not change, so nothing using it needs redeploying. A revoked key cannot be changed.
+   *
+   * Needs an admin key (`fx_admin_…`); an ordinary key is refused with `ADMIN_KEY_REQUIRED` (an `FxapisError`, status 403).
+   */
+  async update(id: string, body: unknown, options: RequestOptions = {}) {
+    return this.send("PATCH", `/v1/api-keys/${encodeURIComponent(id)}`, body, options);
+  }
+
+  /**
+   * Revoke a key — Refused from its very next request — there is no cache to wait for. Revoking an already-revoked key succeeds and changes nothing, so a retried revoke is safe.
+   *
+   * Needs an admin key (`fx_admin_…`); an ordinary key is refused with `ADMIN_KEY_REQUIRED` (an `FxapisError`, status 403).
+   */
+  async revoke(id: string, options: RequestOptions = {}) {
+    return this.send("POST", `/v1/api-keys/${encodeURIComponent(id)}/revoke`, undefined, options);
+  }
+}
+
 export class Fxapis {
   private readonly baseUrl: string;
   private readonly apiKey: string;
+  /**
+   * Managing this workspace's ordinary API keys. Needs an admin key:
+   * `new Fxapis("fx_admin_…").admin.keys.list()`.
+   */
+  readonly admin: { keys: FxapisAdminKeys };
 
   constructor(apiKey: string, baseUrl = "https://api.fxapis.com") {
     this.apiKey = apiKey;
     this.baseUrl = baseUrl.replace(/\/$/, "");
+    const send: Send = (method, path, body, options) => this.request(method, path, body, options);
+    this.admin = { keys: new FxapisAdminKeys(send) };
   }
 
   private async request(method: string, path: string, body: unknown, options: RequestOptions) {
@@ -480,31 +547,6 @@ export class Fxapis {
     return this.request("GET", `/v1/billing/invoices/${encodeURIComponent(id)}`, undefined, options);
   }
 
-  /** List this workspace's keys — Newest first, revoked keys included — a revocation is history worth seeing. */
-  async getApikeys(options: RequestOptions = {}) {
-    return this.request("GET", `/v1/api-keys`, undefined, options);
-  }
-
-  /** Create a key — Returns the key in `key`, **once**. We cannot show a key again after creation, or recover it. A lost key is replaced, not recovered. */
-  async postApikeys(body: unknown, options: RequestOptions = {}) {
-    return this.request("POST", `/v1/api-keys`, body, options);
-  }
-
-  /** Read one key — A key's name, scopes, environment label, hint and when it was last used — never the key itself, which is shown only once, when it is created. */
-  async getApikeysById(id: string, options: RequestOptions = {}) {
-    return this.request("GET", `/v1/api-keys/${encodeURIComponent(id)}`, undefined, options);
-  }
-
-  /** Rename or re-scope a key — New scopes replace the old ones and apply from the key's next request. The key itself does not change, so nothing using it needs redeploying. A revoked key cannot be changed. */
-  async patchApikeysById(id: string, body: unknown, options: RequestOptions = {}) {
-    return this.request("PATCH", `/v1/api-keys/${encodeURIComponent(id)}`, body, options);
-  }
-
-  /** Revoke a key — Refused from its very next request — there is no cache to wait for. Revoking an already-revoked key succeeds and changes nothing, so a retried revoke is safe. */
-  async postApikeysByIdRevoke(id: string, options: RequestOptions = {}) {
-    return this.request("POST", `/v1/api-keys/${encodeURIComponent(id)}/revoke`, undefined, options);
-  }
-
   /** The workspace this credential belongs to — Its plan, and whether trading is switched off. Our staff switch trading off for a whole workspace only during an incident; this is where to see it. */
   async getWorkspace(options: RequestOptions = {}) {
     return this.request("GET", `/v1/workspace`, undefined, options);
@@ -640,41 +682,6 @@ export class Fxapis {
   /** Read one event — Exactly as a webhook delivery carried it. */
   async getEventsById(id: string, options: RequestOptions = {}) {
     return this.request("GET", `/v1/events/${encodeURIComponent(id)}`, undefined, options);
-  }
-
-  /** List this workspace's members — Everyone in this workspace, with their role and when they joined. Removed members are not listed. */
-  async getMembers(options: RequestOptions = {}) {
-    return this.request("GET", `/v1/members`, undefined, options);
-  }
-
-  /** Change a member's role — Only the owner changes roles, and the owner's own role cannot be changed here. Takes effect on the member's next request. */
-  async patchMembersById(id: string, body: unknown, options: RequestOptions = {}) {
-    return this.request("PATCH", `/v1/members/${encodeURIComponent(id)}`, body, options);
-  }
-
-  /** Remove a member — Signs them out everywhere at once and deletes their password. What they did stays attributed to them. Keys they created belong to the workspace and are not revoked — revoke them separately if they should stop too. */
-  async postMembersByIdRemove(id: string, options: RequestOptions = {}) {
-    return this.request("POST", `/v1/members/${encodeURIComponent(id)}/remove`, undefined, options);
-  }
-
-  /** List open invitations — Unaccepted, unrevoked and unexpired. */
-  async getMembersInvitations(options: RequestOptions = {}) {
-    return this.request("GET", `/v1/members/invitations`, undefined, options);
-  }
-
-  /** Invite someone — Returns a link to send them; there is no email yet. An address that already has an open invitation gets that invitation back — the same link, not a new one — with `handedBack: true`. To change the role on it, revoke it and invite again. */
-  async postMembersInvitations(body: unknown, options: RequestOptions = {}) {
-    return this.request("POST", `/v1/members/invitations`, body, options);
-  }
-
-  /** Withdraw an invitation — Its link stops working immediately. Safe to repeat. */
-  async postMembersInvitationsByIdRevoke(id: string, options: RequestOptions = {}) {
-    return this.request("POST", `/v1/members/invitations/${encodeURIComponent(id)}/revoke`, undefined, options);
-  }
-
-  /** Send an invitation again — The same link, emailed again — for one that was not received. At most once a minute per invitation. */
-  async postMembersInvitationsByIdResend(id: string, options: RequestOptions = {}) {
-    return this.request("POST", `/v1/members/invitations/${encodeURIComponent(id)}/resend`, undefined, options);
   }
 }
 

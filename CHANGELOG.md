@@ -6,6 +6,12 @@ while the version is `0.x`, a minor release (`0.2.0`) may change the API and a p
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-10-15
+
+- Breaking: API-key management moves to fx.admin.keys (list, create, get, update, revoke) and needs an admin key (fx_admin_…) made by the workspace owner in the console. Replaces getApikeys, postApikeys, getApikeysById, patchApikeysById and postApikeysByIdRevoke.
+- Breaking: the member and invitation methods are removed (getMembers, patchMembersById, postMembersByIdRemove, getMembersInvitations, postMembersInvitations, postMembersInvitationsByIdRevoke, postMembersInvitationsByIdResend). The API never accepted API keys for them; manage your team in the console.
+- An ordinary key used on an admin method gets 403 ADMIN_KEY_REQUIRED as a typed FxapisError.
+
 ## [0.1.5] — 2026-10-14
 
 - getEvents / getEventsById: catch up on webhook events after downtime

@@ -223,6 +223,49 @@ describe("the names from before fxapis", () => {
   });
 });
 
+describe("what the client leaves out", () => {
+  it("has no method for the console-only member and invitation operations", () => {
+    // Every API key is refused there; a method could only ever fail.
+    const names = Object.getOwnPropertyNames(Fxapis.prototype);
+    expect(names.filter((n) => /members/i.test(n))).toEqual([]);
+  });
+
+  it("no longer has the flat API-key methods: they moved under admin.keys", () => {
+    const names = Object.getOwnPropertyNames(Fxapis.prototype);
+    expect(names.filter((n) => /apikeys/i.test(n))).toEqual([]);
+  });
+});
+
+describe("admin keys", () => {
+  it("manage keys under fx.admin.keys, sending the admin key", async () => {
+    const { calls, fetchImpl } = stub(200, { data: {} });
+    await withFetch(fetchImpl, async () => {
+      const fx = new Fxapis("fx_admin_0123abcd_secret");
+      await fx.admin.keys.list();
+      await fx.admin.keys.create({ name: "ci", scopes: ["accounts:read"] });
+      await fx.admin.keys.get("k/1");
+      await fx.admin.keys.update("k1", { name: "renamed" });
+      await fx.admin.keys.revoke("k1");
+    });
+    expect(calls.map((c) => `${c.init.method} ${c.url}`)).toEqual([
+      "GET https://api.fxapis.com/v1/api-keys",
+      "POST https://api.fxapis.com/v1/api-keys",
+      "GET https://api.fxapis.com/v1/api-keys/k%2F1",
+      "PATCH https://api.fxapis.com/v1/api-keys/k1",
+      "POST https://api.fxapis.com/v1/api-keys/k1/revoke",
+    ]);
+    for (const c of calls) expect((c.init.headers as Record<string, string>).authorization).toBe("Bearer fx_admin_0123abcd_secret");
+    expect(JSON.parse(String(calls[1]!.init.body))).toEqual({ name: "ci", scopes: ["accounts:read"] });
+  });
+
+  it("throw FxapisError like every other method", async () => {
+    const { fetchImpl } = stub(403, { error: { code: "ADMIN_KEY_REQUIRED", message: "no" }, requestId: "r1" });
+    const error = await withFetch(fetchImpl, () => new Fxapis("fx_live_x").admin.keys.list()).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(FxapisError);
+    expect((error as FxapisError).code).toBe("ADMIN_KEY_REQUIRED");
+  });
+});
+
 describe("verifyWebhook", () => {
   const secret = "whsec_test";
   const body = JSON.stringify({ id: "e1", type: "order.filled", createdAt: "2026-10-08T12:00:00.000Z", data: { id: "o1" } });
