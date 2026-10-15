@@ -564,7 +564,7 @@ export class Fxapis {
     return this.request("GET", `/v1/webhooks`, undefined, options);
   }
 
-  /** Create a webhook endpoint — Events are POSTed to `url` as JSON — `{ id, type, createdAt, data }` — signed in the `fxapis-signature` header with the returned `secret`. **The secret is returned once**, here. Retried for about 45 hours on failure; switched off after 20 failures in a row. Up to 10 endpoints per workspace. */
+  /** Create a webhook endpoint — Events are POSTed to `url` as JSON — `{ id, type, createdAt, data }` — signed in the `fxapis-signature` header with the returned `secret`. **The secret is returned once**, here. Retried over about 44.6 hours on failure (jittered; the last wait alone can run up to about 28.8 hours); switched off after 20 failures in a row. Up to 10 endpoints per workspace. */
   async postWebhooks(body: unknown, options: RequestOptions = {}) {
     return this.request("POST", `/v1/webhooks`, body, options);
   }
@@ -584,12 +584,12 @@ export class Fxapis {
     return this.request("DELETE", `/v1/webhooks/${encodeURIComponent(id)}`, undefined, options);
   }
 
-  /** Enable a webhook endpoint — Events are sent again from the next one, and the failure count starts from zero. Events already queued to it before it was switched off can be redelivered from the delivery log; events recorded while it was off never reached that log and can't be redelivered. Safe to repeat. */
+  /** Enable a webhook endpoint — Events are sent again from the next one, and the failure count starts from zero. Deliveries that were waiting when it was switched off resume on their schedule. Events recorded while it was off are not sent automatically — replay them (`POST /v1/webhooks/{id}/replay`, failed-only by default), or read them from `GET /v1/events`. Safe to repeat. */
   async postWebhooksByIdEnable(id: string, options: RequestOptions = {}) {
     return this.request("POST", `/v1/webhooks/${encodeURIComponent(id)}/enable`, undefined, options);
   }
 
-  /** Disable a webhook endpoint — Events stop being sent to it until it is enabled again. Safe to repeat. */
+  /** Disable a webhook endpoint — Events stop being sent to it until it is enabled again. Deliveries already waiting are kept, not dropped; events recorded meanwhile can be replayed once it is back. Safe to repeat. */
   async postWebhooksByIdDisable(id: string, options: RequestOptions = {}) {
     return this.request("POST", `/v1/webhooks/${encodeURIComponent(id)}/disable`, undefined, options);
   }
@@ -607,15 +607,39 @@ export class Fxapis {
   /**
    * Delivery attempts to a webhook endpoint — Every attempt, newest first, kept 30 days: what was sent, what your endpoint answered, and how long it took.
    *
-   * Query (`options.query`): `status`, `limit`, `cursor`.
+   * Query (`options.query`): `status`, `eventType`, `limit`, `cursor`.
    */
   async getWebhooksByIdDeliveries(id: string, options: RequestOptions = {}) {
     return this.request("GET", `/v1/webhooks/${encodeURIComponent(id)}/deliveries`, undefined, options);
   }
 
+  /** One delivery attempt, in full — The request as sent — URL, headers (signature included) and exact body — and what your endpoint answered: status, headers and the first 4 KB of the body. Latency is `durationMs`. Kept 30 days on every plan, even once the event itself has aged out of your event history. */
+  async getWebhooksByIdDeliveriesByDeliveryId(id: string, deliveryId: string, options: RequestOptions = {}) {
+    return this.request("GET", `/v1/webhooks/${encodeURIComponent(id)}/deliveries/${encodeURIComponent(deliveryId)}`, undefined, options);
+  }
+
   /** Redeliver an event — Queues the event to this endpoint again, with a fresh retry schedule. Same event id, so your deduplication still works. */
   async postWebhooksByIdDeliveriesByEventIdRedeliver(id: string, eventId: string, options: RequestOptions = {}) {
     return this.request("POST", `/v1/webhooks/${encodeURIComponent(id)}/deliveries/${encodeURIComponent(eventId)}/redeliver`, undefined, options);
+  }
+
+  /** Replay events to an endpoint — Queues this window's events, of the types this endpoint receives, oldest first, with their original ids. By default (`include: "failed"`) only events it did not receive — deliveries it gave up on, and events recorded while it was switched off — so repeating a call sends nothing twice. `include: "all"` also re-sends what it already received: deduplicate on `id` first. Types follow the endpoint's events now: if you added a type later, its events recorded since the endpoint was created are sent too — never sent to it before, but older than what it has received. Up to 10,000 per call; `nextSince` says where to continue. Events written at one exact moment are never split across calls, so in the rare case of more than that at one moment, a call queues them all. For code that catches up by itself, read `GET /v1/events?after=<last listed id>` instead. */
+  async postWebhooksByIdReplay(id: string, body: unknown, options: RequestOptions = {}) {
+    return this.request("POST", `/v1/webhooks/${encodeURIComponent(id)}/replay`, body, options);
+  }
+
+  /**
+   * List events — Everything that happened in this workspace while its plan included webhooks, exactly as webhooks deliver it, kept 7, 30 or 90 days by plan — whether or not a webhook endpoint was listening. Events from a time the plan did not include webhooks are not recorded, so they are not listed.
+   *
+   * Query (`options.query`): `after`, `since`, `until`, `type`, `account_id`, `delivery_status`, `limit`, `cursor`.
+   */
+  async getEvents(options: RequestOptions = {}) {
+    return this.request("GET", `/v1/events`, undefined, options);
+  }
+
+  /** Read one event — Exactly as a webhook delivery carried it. */
+  async getEventsById(id: string, options: RequestOptions = {}) {
+    return this.request("GET", `/v1/events/${encodeURIComponent(id)}`, undefined, options);
   }
 
   /** List this workspace's members — Everyone in this workspace, with their role and when they joined. Removed members are not listed. */

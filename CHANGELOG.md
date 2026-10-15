@@ -6,6 +6,12 @@ while the version is `0.x`, a minor release (`0.2.0`) may change the API and a p
 
 ## [Unreleased]
 
+## [0.1.5] — 2026-10-14
+
+- getEvents / getEventsById: catch up on webhook events after downtime
+- postWebhooksByIdReplay: re-send what an endpoint missed (failed only by default)
+- Delivery logs: paged deliveries with the request and response, and an attempt detail method
+
 ## [0.1.4] — 2026-10-11
 
 - Webhooks: methods for the /v1/webhooks endpoints — list, create, read, update, enable, disable, rotate the secret, send a test event, delete, read deliveries and redeliver.
