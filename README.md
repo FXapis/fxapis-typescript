@@ -38,6 +38,8 @@ MT5 only (MT4 is not supported). Call it from your **backend** — never ship an
 - [Quickstart](#quickstart)
 - [Orders, idempotency and the three failures](#orders-idempotency-and-the-three-failures)
 - [Methods](#methods)
+- [Balance, equity and margin](#balance-equity-and-margin)
+- [Live prices](#live-prices)
 - [Pagination](#pagination)
 - [Copy trading in one call](#copy-trading-in-one-call)
 - [Webhooks](#webhooks)
@@ -94,14 +96,19 @@ const order = await fx.postAccountsByIdOrdersMarket(
 );
 console.log(order.state, order.filledPrice);
 
-// 4. Positions, then close one — always with an idempotency key.
+// 4. Close the position it opened — always with an idempotency key.
+// The order names it as brokerPositionId; until that is set, the position carries the order's own ticket.
+const ticket = order.brokerPositionId ?? order.brokerOrderId;
 const positions = await fx.getAccountsByIdPositions(account.id);
-for (const p of positions) {
-  await fx.postAccountsByIdPositionsByPositionIdClose(account.id, p.brokerPositionId, {}, {
-    idempotencyKey: `close_${p.brokerPositionId}`,
+const position = positions.find((p) => p.brokerPositionId === ticket);
+if (position) {
+  await fx.postAccountsByIdPositionsByPositionIdClose(account.id, position.brokerPositionId, {}, {
+    idempotencyKey: `close_${position.brokerPositionId}`,
   });
 }
 ```
+
+An opening order carries `brokerPositionId`, the ticket of the position it opened — set from the fill itself, or linked from the broker's positions and deals a few minutes later for a pending order that fills later. Close by it. While it is `null`, the new position carries the order's `brokerOrderId` as its ticket.
 
 Responses are the `data` of the API's `{ "data": … }` envelope. Every method takes a final `options` argument: `{ idempotencyKey?, query?, signal? }`.
 
@@ -144,6 +151,8 @@ Method names are generated from the path: `POST /v1/accounts/{id}/orders/market`
 | Connect an MT5 account | `postAccounts(body)` | `POST /v1/accounts` |
 | List / get accounts | `getAccounts()`, `getAccountsById(id)` | `GET /v1/accounts[/{id}]` |
 | Poll lifecycle state | `getAccountsByIdStatus(id)` | `GET /v1/accounts/{id}/status` |
+| Balance, equity and margin | `getAccountsByIdFigures(id)`, `getAccountsByIdFigures(id, { query: { fresh: true } })` | `GET /v1/accounts/{id}/figures` |
+| Live prices from the account's broker | `getAccountsByIdQuotes(id, { query: { symbols, instruments } })` | `GET /v1/accounts/{id}/quotes` |
 | Bring online / offline | `postAccountsByIdWarm(id)`, `postAccountsByIdCool(id)` | `POST …/warm`, `…/cool` |
 | Prepare up to 200 accounts | `postAccountsPrepare({ accountIds })` | `POST /v1/accounts/prepare` |
 | Restart, disconnect, set mode | `postAccountsByIdRestart`, `postAccountsByIdDisconnect`, `postAccountsByIdMode(id, { mode })` | `POST …/restart`, `…/disconnect`, `…/mode` |
@@ -167,6 +176,31 @@ Method names are generated from the path: `POST /v1/accounts/{id}/orders/market`
 | Usage this month | `getBillingUsage()`, `getBillingUsageDaily()` | `GET /v1/billing/usage[/daily]` |
 
 Billing reads (subscription, invoices) have methods too. Managing your team (members and invitations) is done in the console only, so the SDK has no methods for it.
+
+### Balance, equity and margin
+
+`getAccountsByIdFigures` answers the account's balance, equity, margin, free margin, margin level, credit and open profit, as decimal strings in the account's currency. Without `fresh` it is the last read from the terminal (`source: "snapshot"`, taken every 15 seconds while the account is online, with `observedAt`); `fresh: true` asks the terminal now (`source: "live"`), and needs the account `ready` (`409 ACCOUNT_NOT_READY` otherwise). `GET /v1/accounts/{id}` carries the same figures, with `figuresObservedAt`.
+
+```ts
+const figures = await fx.getAccountsByIdFigures(accountId, { query: { fresh: true } });
+console.log(figures.balance, figures.equity, figures.freeMargin, figures.marginLevel); // marginLevel is null while no margin is used
+```
+
+Webhooks do not carry figures — read them here.
+
+### Live prices
+
+`getAccountsByIdQuotes` reads bid, ask and spread for up to 20 broker `symbols` and `instruments` together (comma-separated) from the account's own terminal — the prices that account trades at. The account must be online.
+
+```ts
+const quotes = await fx.getAccountsByIdQuotes(accountId, { query: { symbols: "EURUSD", instruments: "XAUUSD" } });
+for (const q of quotes) {
+  if (q.status !== "ok") continue; // "unknown_symbol" or "no_price"
+  console.log(q.symbol, q.bid, q.ask, q.time, q.brokerTime, q.ageMs, q.marketOpen, q.stale, q.tradeMode);
+}
+```
+
+Each quote carries `time` (UTC), `brokerTime` (the broker's own clock) and `ageMs`, so you can apply your own freshness rule. A closed market answers its last price with `marketOpen: false`; `stale` is true only while the market is open and the last tick is over 60 seconds old; `tradeMode` is `full`, `longOnly`, `shortOnly`, `closeOnly` or `disabled`. There is no stream: each account's terminal may be asked 300 times a minute (burst 50) across every caller, then `429 RATE_LIMITED` with `retryAfter`.
 
 ### Admin keys: manage API keys from code
 
