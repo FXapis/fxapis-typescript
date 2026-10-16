@@ -6,6 +6,11 @@ while the version is `0.x`, a minor release (`0.2.0`) may change the API and a p
 
 ## [Unreleased]
 
+## [0.2.1] — 2026-10-15
+
+- getAccountsByIdFigures: balance, equity, margin, free margin, margin level, credit and profit (fresh: true reads the terminal live)
+- getAccountsByIdQuotes: live bid/ask from the account's own broker for up to 20 symbols or instruments, with time, brokerTime, ageMs, marketOpen, stale and tradeMode
+
 ## [0.2.0] — 2026-10-15
 
 - Breaking: API-key management moves to fx.admin.keys (list, create, get, update, revoke) and needs an admin key (fx_admin_…) made by the workspace owner in the console. Replaces getApikeys, postApikeys, getApikeysById, patchApikeysById and postApikeysByIdRevoke.

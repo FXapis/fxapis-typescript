@@ -285,7 +285,7 @@ export class Fxapis {
     return this.request("POST", `/v1/accounts`, body, options);
   }
 
-  /** Fetch one account — One connected account: its login, server, label, mode, current state and when it last changed. The password is never included. Another workspace's account is 404. */
+  /** Fetch one account — One connected account: its login, server, label, mode, current state and when it last changed. The password is never included. Another workspace's account is 404. Balance, equity and margin are the last read from the terminal (`figuresObservedAt`); `GET /v1/accounts/{id}/figures?fresh=true` asks it now. */
   async getAccountsById(id: string, options: RequestOptions = {}) {
     return this.request("GET", `/v1/accounts/${encodeURIComponent(id)}`, undefined, options);
   }
@@ -302,6 +302,15 @@ export class Fxapis {
   /** Poll lifecycle state — The endpoint to poll after bringing an account online. Cheap enough to call every second or two; `state` reaches `ready` when the account is logged in and ready to trade. */
   async getAccountsByIdStatus(id: string, options: RequestOptions = {}) {
     return this.request("GET", `/v1/accounts/${encodeURIComponent(id)}/status`, undefined, options);
+  }
+
+  /**
+   * Balance, equity and margin — The account's money as its MetaTrader terminal reports it: balance, equity, margin, free margin, margin level, credit and open profit, as decimal strings in the account's currency.
+   *
+   * Query (`options.query`): `fresh`.
+   */
+  async getAccountsByIdFigures(id: string, options: RequestOptions = {}) {
+    return this.request("GET", `/v1/accounts/${encodeURIComponent(id)}/figures`, undefined, options);
   }
 
   /** Replace an account's password — Gives a connected account a new trading password — after the member changed it at the broker, or when the account is in `invalid_credentials` because the one it had was wrong. Send `server` as well to correct the server name. */
@@ -321,6 +330,15 @@ export class Fxapis {
    */
   async getAccountsByIdEvents(id: string, options: RequestOptions = {}) {
     return this.request("GET", `/v1/accounts/${encodeURIComponent(id)}/events`, undefined, options);
+  }
+
+  /**
+   * Live prices from the account's broker — Bid, ask and spread for up to 20 symbols or instruments, read from the account's own MetaTrader terminal — the prices this account trades at. The account must be online (409 `ACCOUNT_NOT_READY` otherwise).
+   *
+   * Query (`options.query`): `symbols`, `instruments`.
+   */
+  async getAccountsByIdQuotes(id: string, options: RequestOptions = {}) {
+    return this.request("GET", `/v1/accounts/${encodeURIComponent(id)}/quotes`, undefined, options);
   }
 
   /** Bring an account online — Starts connecting the account and returns **202** immediately — the broker login is still in progress. Poll `pollUrl` until `state` is `ready`. */
