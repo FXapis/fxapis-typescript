@@ -6,6 +6,11 @@ while the version is `0.x`, a minor release (`0.2.0`) may change the API and a p
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-10-16
+
+- Added the copy trading client: strategies, subscriptions (create, change, pause, reset, delete), executions with filters and page cursors, links, and status.
+- Copy trading is set up but copying starts after scheduled maintenance; until then calls that start copying answer 503 COPY_TRADING_PAUSED.
+
 ## [0.2.1] — 2026-10-15
 
 - getAccountsByIdFigures: balance, equity, margin, free margin, margin level, credit and profit (fresh: true reads the terminal live)

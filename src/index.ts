@@ -530,6 +530,96 @@ export class Fxapis {
     return this.request("POST", `/v1/execution-waves/${encodeURIComponent(id)}/cancel`, undefined, options);
   }
 
+  /** Whether copy trading is running — `paused` true while copy trading is paused on this server (before scheduled maintenance): strategies and subscriptions can be read, paused and deleted, but nothing that starts copying is taken (503 `COPY_TRADING_PAUSED`), nothing is copied, and no follower is billed. `message` says so in a sentence, or is null. */
+  async getCopyStatus(options: RequestOptions = {}) {
+    return this.request("GET", `/v1/copy/status`, undefined, options);
+  }
+
+  /**
+   * List strategies — This workspace's copy-trading strategies, newest first, archived ones included. Paginated by cursor.
+   *
+   * Query (`options.query`): `limit`, `cursor`.
+   */
+  async getCopyStrategies(options: RequestOptions = {}) {
+    return this.request("GET", `/v1/copy/strategies`, undefined, options);
+  }
+
+  /** Make an account a strategy — Marks an account as a strategy: its trades are copied to every account that subscribes to it. The account must be `always_on` — a master traded by hand never sends fxapis an order, so an idle terminal would be stopped — and a hedging account, and must not follow a strategy itself. One live strategy per account. A member confirms it is them (step-up). While copy trading is paused on this server (`GET /v1/copy/status`), this answers 503 `COPY_TRADING_PAUSED`. */
+  async postCopyStrategies(body: unknown, options: RequestOptions = {}) {
+    return this.request("POST", `/v1/copy/strategies`, body, options);
+  }
+
+  /** Fetch a strategy */
+  async getCopyStrategiesById(id: string, options: RequestOptions = {}) {
+    return this.request("GET", `/v1/copy/strategies/${encodeURIComponent(id)}`, undefined, options);
+  }
+
+  /** Rename, pause or resume a strategy — A paused strategy's master is not watched, and nothing is copied — closes included — until it is resumed; the drift check then puts followers right. Resuming asks a member to confirm it is them (step-up), needs a plan with copy trading, and is refused as a whole (403 `KEY_LIMIT_EXCEEDED`, naming the account) when the caller may not open on one of the active followers — a connected app's consent list, a key's `accountIds`, or a key with limits and someone else's subscription. Pause that subscription first. Renaming and pausing always work; resuming is refused while copy trading is paused on this server (503 `COPY_TRADING_PAUSED`, `GET /v1/copy/status`). */
+  async patchCopyStrategiesById(id: string, body: unknown, options: RequestOptions = {}) {
+    return this.request("PATCH", `/v1/copy/strategies/${encodeURIComponent(id)}`, body, options);
+  }
+
+  /** Archive a strategy — Only once no subscription copies it (pause or delete them first). Its executions and links stay in the log, and its paused or stopped subscriptions stay, unable to resume; the account can become a strategy again. */
+  async deleteCopyStrategiesById(id: string, options: RequestOptions = {}) {
+    return this.request("DELETE", `/v1/copy/strategies/${encodeURIComponent(id)}`, undefined, options);
+  }
+
+  /**
+   * List subscriptions — Followers, newest first, with their status, settings, equity, today's profit where the figures allow, and their last execution. Paginated by cursor.
+   *
+   * Query (`options.query`): `strategyId`, `followerAccountId`, `limit`, `cursor`.
+   */
+  async getCopySubscriptions(options: RequestOptions = {}) {
+    return this.request("GET", `/v1/copy/subscriptions`, undefined, options);
+  }
+
+  /** Subscribe an account to a strategy — The follower copies the strategy's master from now on, with its own settings; every setting has a default. Same workspace, hedging accounts only, and an account cannot be a master and a follower at once. Counts against the plan's followers when it starts `active`. A member confirms it is them (step-up). While copy trading is paused on this server (`GET /v1/copy/status`), this answers 503 `COPY_TRADING_PAUSED`. */
+  async postCopySubscriptions(body: unknown, options: RequestOptions = {}) {
+    return this.request("POST", `/v1/copy/subscriptions`, body, options);
+  }
+
+  /** Fetch a subscription */
+  async getCopySubscriptionsById(id: string, options: RequestOptions = {}) {
+    return this.request("GET", `/v1/copy/subscriptions/${encodeURIComponent(id)}`, undefined, options);
+  }
+
+  /** Change a subscription's settings or status — `settings` is merged into what is there: objects key by key, lists and `symbols.map` replaced. `status` is `active`, `paused` or `close_only`; a stopped subscription is brought back with POST …/reset. Changing sizing, limits, reverse or risk limits, or resuming, asks a member to confirm it is them (step-up); pausing and close_only never do. Moving into `active` or `close_only` counts against the plan's followers. Moving into `active` is refused while copy trading is paused on this server (503 `COPY_TRADING_PAUSED`, `GET /v1/copy/status`); settings, pausing and close_only still work. */
+  async patchCopySubscriptionsById(id: string, body: unknown, options: RequestOptions = {}) {
+    return this.request("PATCH", `/v1/copy/subscriptions/${encodeURIComponent(id)}`, body, options);
+  }
+
+  /**
+   * Delete a subscription — `closePositions` is required.
+   *
+   * Query (`options.query`): `closePositions`.
+   */
+  async deleteCopySubscriptionsById(id: string, options: RequestOptions = {}) {
+    return this.request("DELETE", `/v1/copy/subscriptions/${encodeURIComponent(id)}`, undefined, options);
+  }
+
+  /** Reset a stopped subscription — Back to `active`, with every risk period measured afresh from the next figures read. Counts against the plan's followers, needs a plan with copy trading, and asks a member to confirm it is them (step-up). A stop-out's closes still pending keep going. While copy trading is paused on this server (`GET /v1/copy/status`), this answers 503 `COPY_TRADING_PAUSED`. */
+  async postCopySubscriptionsByIdReset(id: string, options: RequestOptions = {}) {
+    return this.request("POST", `/v1/copy/subscriptions/${encodeURIComponent(id)}/reset`, undefined, options);
+  }
+
+  /**
+   * List a subscription's links — Which follower position copies which master position. Closes, partial closes and the drift check go through these, never by symbol. Open links only, or with `state=all` those closed in the last 30 days too.
+   *
+   * Query (`options.query`): `state`.
+   */
+  async getCopySubscriptionsByIdLinks(id: string, options: RequestOptions = {}) {
+    return this.request("GET", `/v1/copy/subscriptions/${encodeURIComponent(id)}/links`, undefined, options);
+  }
+
+  /**
+   * List copy executions — The copy-trading log: what each master change (and each drift correction or stop-out close) did on each follower, newest first — executed, skipped, failed or still pending — with the reason, in words, and the follower's order. Paginated by cursor.
+   *
+   * Query (`options.query`): `strategyId`, `subscriptionId`, `followerAccountId`, `status`, `reason`, `since`, `limit`, `cursor`.
+   */
+  async getCopyExecutions(options: RequestOptions = {}) {
+    return this.request("GET", `/v1/copy/executions`, undefined, options);
+  }
+
   /** The available plans — The plans on offer now: what each includes and what it costs. Prices are in minor units — `9900` is $99.00, never a float. */
   async getPlans(options: RequestOptions = {}) {
     return this.request("GET", `/v1/plans`, undefined, options);
