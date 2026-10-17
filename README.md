@@ -41,6 +41,7 @@ MT5 only (MT4 is not supported). Call it from your **backend** — never ship an
 - [Balance, equity and margin](#balance-equity-and-margin)
 - [Live prices](#live-prices)
 - [Pagination](#pagination)
+- [Copy trading](#copy-trading)
 - [Copy trading in one call](#copy-trading-in-one-call)
 - [Webhooks](#webhooks)
 - [Error handling reference](#error-handling-reference)
@@ -173,6 +174,10 @@ Method names are generated from the path: `POST /v1/accounts/{id}/orders/market`
 | Webhook endpoints | `getWebhooks()`, `postWebhooks(body)`, `getWebhooksById(id)`, `patchWebhooksById(id, body)`, `deleteWebhooksById(id)` | `/v1/webhooks…` |
 | Enable, disable, rotate, test | `postWebhooksByIdEnable(id)`, `…Disable`, `…Rotate`, `…Test` | `POST /v1/webhooks/{id}/…` |
 | Delivery log, redeliver | `getWebhooksByIdDeliveries(id)`, `postWebhooksByIdDeliveriesByEventIdRedeliver(id, eventId)` | `/v1/webhooks/{id}/deliveries…` |
+| Copy trading: is it running | `getCopyStatus()` | `GET /v1/copy/status` |
+| Copy-trading strategies | `getCopyStrategies()`, `postCopyStrategies(body)`, `getCopyStrategiesById(id)`, `patchCopyStrategiesById(id, body)`, `deleteCopyStrategiesById(id)` | `/v1/copy/strategies…` |
+| Copy-trading subscriptions | `getCopySubscriptions({ query: { strategyId, followerAccountId } })`, `postCopySubscriptions(body)`, `getCopySubscriptionsById(id)`, `patchCopySubscriptionsById(id, body)`, `deleteCopySubscriptionsById(id, { query: { closePositions: "true" } })`, `postCopySubscriptionsByIdReset(id)`, `getCopySubscriptionsByIdLinks(id)` | `/v1/copy/subscriptions…` |
+| Copy-trading executions log | `getCopyExecutions({ query: { strategyId, subscriptionId, followerAccountId, status, reason, since, limit, cursor } })` | `GET /v1/copy/executions` |
 | Usage this month | `getBillingUsage()`, `getBillingUsageDaily()` | `GET /v1/billing/usage[/daily]` |
 
 Billing reads (subscription, invoices) have methods too. Managing your team (members and invitations) is done in the console only, so the SDK has no methods for it.
@@ -235,6 +240,27 @@ do {
   cursor = orders.page?.hasMore ? orders.page.nextCursor : undefined;
 } while (cursor);
 ```
+
+## Copy trading
+
+From 0.3.0. Mark an always-on, hedging account as a strategy, then subscribe follower accounts in the same workspace: fxapis copies the master's opens, closes, partial closes and stop moves on every follower server-side, with sizing, symbol mapping and risk limits of their own, and no code on your side. See the [copy-trading guide](https://docs.fxapis.com/guides/copy-trading).
+
+```ts
+const strategy = await fx.postCopyStrategies({ accountId: masterId, name: "Gold scalper" });
+const subscription = await fx.postCopySubscriptions({
+  strategyId: strategy.id,
+  followerAccountId: followerId,
+  settings: { sizing: { mode: "equity_ratio" } },
+});
+
+// What each master change did on each follower, newest first, with the reason.
+const executions = await fx.getCopyExecutions({ query: { followerAccountId: followerId, limit: 50 } });
+for (const e of executions) console.log(e.status, e.reason);
+```
+
+Strategies, subscriptions and executions are cursor-paginated like orders (see [Pagination](#pagination)). Pause a subscription with `patchCopySubscriptionsById(id, { status: "paused" })` (`"active"`, `"paused"` or `"close_only"`), bring a stopped one back with `postCopySubscriptionsByIdReset(id)`, and archive a strategy with `deleteCopyStrategiesById(id)`.
+
+> **Copying is paused until scheduled maintenance.** Until then, calls that start copying — `postCopyStrategies`, `postCopySubscriptions`, resuming a strategy or subscription, and `postCopySubscriptionsByIdReset` — throw an `FxapisError` with status 503 and code `COPY_TRADING_PAUSED`. Reads, settings, pausing and deleting still work. `getCopyStatus()` answers `{ paused, message }`.
 
 ## Copy trading in one call
 
