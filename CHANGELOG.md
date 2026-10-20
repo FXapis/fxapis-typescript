@@ -6,6 +6,13 @@ while the version is `0.x`, a minor release (`0.2.0`) may change the API and a p
 
 ## [Unreleased]
 
+## [0.3.1] — 2026-10-20
+
+- problem.code can be PLATFORM_ISSUE: accounts cannot come online because of a problem on fxapis's side; nothing about the account needs changing, and there are no actions.
+- New API key scope billing:read. Reading the subscription, invoices, usage charges, agreement, standing and daily usage needs it for keys made from 21 October 2026; older keys with accounts:read keep access.
+- Plan pricing includes creditLimit (usage plans).
+- If your code switches exhaustively on problem.code or on scopes, handle the new value.
+
 ## [0.3.0] — 2026-10-16
 
 - Added the copy trading client: strategies, subscriptions (create, change, pause, reset, delete), executions with filters and page cursors, links, and status.

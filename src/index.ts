@@ -597,7 +597,7 @@ export class Fxapis {
     return this.request("DELETE", `/v1/copy/subscriptions/${encodeURIComponent(id)}`, undefined, options);
   }
 
-  /** Reset a stopped subscription — Back to `active`, with every risk period measured afresh from the next figures read. Counts against the plan's followers, needs a plan with copy trading, and asks a member to confirm it is them (step-up). A stop-out's closes still pending keep going. While copy trading is paused on this server (`GET /v1/copy/status`), this answers 503 `COPY_TRADING_PAUSED`. */
+  /** Reset a stopped subscription — Back to `active` (or to `paused`, if it was paused when it stopped), with every risk period measured afresh from the next figures read. Back to `active` counts against the plan's followers. Needs a plan with copy trading, and asks a member to confirm it is them (step-up). A stop-out's closes still pending keep going. While copy trading is paused on this server (`GET /v1/copy/status`), this answers 503 `COPY_TRADING_PAUSED`. */
   async postCopySubscriptionsByIdReset(id: string, options: RequestOptions = {}) {
     return this.request("POST", `/v1/copy/subscriptions/${encodeURIComponent(id)}/reset`, undefined, options);
   }
