@@ -136,6 +136,10 @@ try {
     case "ORDER_REJECTED":
       // The broker refused; nothing opened. If err.retryable, try again with a NEW key.
       break;
+    case "NO_PRICE":
+      // The broker had no price for the symbol (market closed, or not offered). Nothing was sent.
+      // Retry once it is quoting, with the SAME key.
+      break;
   }
 }
 ```
@@ -322,6 +326,7 @@ app.post("/fxapis/webhooks", express.raw({ type: "application/json" }), async (r
 | `SEND_FAILED` | Nothing reached the broker | Retry with the **same** `idempotencyKey` |
 | `ACCOUNT_NOT_READY` / `NO_RUNTIME` | The account isn't online | Bring it online, wait for `ready`, retry with the same key |
 | `ORDER_REJECTED` | The broker refused it; nothing opened | Show `message` to the user; retry with a **new** key only if `retryable` |
+| `NO_PRICE` (422) | The broker had no current price for the symbol (market closed, or not offered); nothing was sent | Retry once the symbol is quoting, with the **same** `idempotencyKey` |
 | `MISSING_SCOPE` | The API key doesn't allow this call | Ask for a key with the right scope — don't work around it |
 | `RATE_LIMITED` | Too many requests | Wait `retryAfter` seconds, then retry once |
 | `GATEWAY_ERROR` | A proxy between you and fxapis answered — the request may or may not have arrived | Retry with the **same** `idempotencyKey`; if it was an order, check `getOrders` before using a new one |
