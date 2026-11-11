@@ -211,8 +211,11 @@ describe("what it deliberately does not do", () => {
     // that can open a position twice. That decision is not ours to make
     // inside a convenience wrapper.
     const source = new Fxapis("k") as unknown as Record<string, unknown>;
+    // POST /v1/execution-waves/{id}/retry is an endpoint the customer calls
+    // on purpose, not a loop, so its generated method is allowed.
+    const endpoints = new Set(["postExecutionwavesByIdRetry"]);
     const names = Object.getOwnPropertyNames(Object.getPrototypeOf(source));
-    expect(names.filter((n) => /retry|backoff/i.test(n))).toEqual([]);
+    expect(names.filter((n) => /retry|backoff/i.test(n) && !endpoints.has(n))).toEqual([]);
   });
 });
 

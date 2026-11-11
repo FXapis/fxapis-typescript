@@ -6,6 +6,13 @@ while the version is `0.x`, a minor release (`0.2.0`) may change the API and a p
 
 ## [Unreleased]
 
+## [0.3.2] — 2026-11-11
+
+- Added getAccountsByIdCandles: price history (candles) from an account's broker, M1 to MN1, up to 1,000 bars
+- Added postExecutionwavesByIdClose: close the positions a multi-account order opened, on every account at once
+- Added postExecutionwavesByIdRetry: place a new multi-account order for the accounts the first one did not reach
+- Added MarketLabs (beta): getMarketlabsToday, getMarketlabsEvents (economic calendar), getMarketlabsNews, getMarketlabsResearch, getMarketlabsResearchTrackrecord and the other MarketLabs reads
+
 ## [0.3.1] — 2026-10-20
 
 - problem.code can be PLATFORM_ISSUE: accounts cannot come online because of a problem on fxapis's side; nothing about the account needs changing, and there are no actions.

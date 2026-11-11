@@ -341,6 +341,15 @@ export class Fxapis {
     return this.request("GET", `/v1/accounts/${encodeURIComponent(id)}/quotes`, undefined, options);
   }
 
+  /**
+   * Price history (candles) from the account's broker — Open, high, low and close bars for one symbol or instrument, read from the account's own MetaTrader terminal: `timeframe` M1, M5, M15, M30, H1, H4, D1, W1 or MN1, and up to 1,000 bars (`count`, default 100) counting back from the current one, oldest first; the last bar is still forming. Times are when each bar opened, in UTC (converted with the broker's current clock offset, so bars from before its last daylight-saving change can be an hour out). `tickVolume` counts price changes, not traded volume. The account must be online (409 `ACCOUNT_NOT_READY` otherwise). Each call reaches the terminal and is charged to the account's live budget (300 a minute + 50, shared with quotes and fresh figures); past it this answers 429 `RATE_LIMITED` with `retry-after`.
+   *
+   * Query (`options.query`): `symbol`, `instrument`, `timeframe`, `count`.
+   */
+  async getAccountsByIdCandles(id: string, options: RequestOptions = {}) {
+    return this.request("GET", `/v1/accounts/${encodeURIComponent(id)}/candles`, undefined, options);
+  }
+
   /** Bring an account online — Starts connecting the account and returns **202** immediately — the broker login is still in progress. Poll `pollUrl` until `state` is `ready`. */
   async postAccountsByIdWarm(id: string, options: RequestOptions = {}) {
     return this.request("POST", `/v1/accounts/${encodeURIComponent(id)}/warm`, undefined, options);
@@ -356,7 +365,7 @@ export class Fxapis {
     return this.request("POST", `/v1/accounts/${encodeURIComponent(id)}/cool`, undefined, options);
   }
 
-  /** Restart the connection — For an account that is online but misbehaving — `degraded`, stale quotes, a stuck sync. Returns **202**; poll `pollUrl` until `state` is `ready`. Refused with 409 while an order is in flight, for the same reason as taking it offline. */
+  /** Restart the connection — For an account that is online but misbehaving — `degraded`, stale quotes, a stuck sync. Returns **202**; poll `pollUrl` until `state` is `ready`. Refused with 409 while an order is in flight, for the same reason as taking it offline. Returns 402 `QUOTA_EXCEEDED` when the workspace has no plan. */
   async postAccountsByIdRestart(id: string, options: RequestOptions = {}) {
     return this.request("POST", `/v1/accounts/${encodeURIComponent(id)}/restart`, undefined, options);
   }
@@ -530,7 +539,25 @@ export class Fxapis {
     return this.request("POST", `/v1/execution-waves/${encodeURIComponent(id)}/cancel`, undefined, options);
   }
 
-  /** Whether copy trading is running — `paused` true while copy trading is paused on this server (before scheduled maintenance): strategies and subscriptions can be read, paused and deleted, but nothing that starts copying is taken (503 `COPY_TRADING_PAUSED`), nothing is copied, and no follower is billed. `message` says so in a sentence, or is null. */
+  /**
+   * Retry the accounts a multi-account order did not reach — Places a new multi-account order for the accounts of this one that were `skipped` (never sent: not online in time, trading switched off, no price). Same market, side, per-account volumes, stops and comment. Add `rejected` to `include` to retry the accounts the broker refused too. A `cancelled` or `abandoned` order sent nothing, so every account is retried.
+   *
+   * Send `options.idempotencyKey` (e.g. `newIdempotencyKey()`) and reuse it on a retry: the same key returns the first answer instead of placing a second order.
+   */
+  async postExecutionwavesByIdRetry(id: string, body: unknown, options: RequestOptions = {}) {
+    return this.request("POST", `/v1/execution-waves/${encodeURIComponent(id)}/retry`, body, options);
+  }
+
+  /**
+   * Close the positions a multi-account order opened — Closes, on every account at once, the position each `filled` account's order opened, and answers with a result for each account. Each close is an ordinary close order, placed exactly as `POST /v1/accounts/{id}/positions/{positionId}/close` places one: never refused for the plan's allowance, refused when trading is switched off. Send `accountIds` to close only some accounts.
+   *
+   * Send `options.idempotencyKey` (e.g. `newIdempotencyKey()`) and reuse it on a retry: the same key returns the first answer instead of placing a second order.
+   */
+  async postExecutionwavesByIdClose(id: string, body: unknown, options: RequestOptions = {}) {
+    return this.request("POST", `/v1/execution-waves/${encodeURIComponent(id)}/close`, body, options);
+  }
+
+  /** Whether copy trading is running — `paused` true while copy trading is paused (it is coming soon): strategies and subscriptions can be read, paused and deleted, but nothing that starts copying is taken (503 `COPY_TRADING_PAUSED`), nothing is copied, and no follower is billed. `message` says so in a sentence, or is null. */
   async getCopyStatus(options: RequestOptions = {}) {
     return this.request("GET", `/v1/copy/status`, undefined, options);
   }
@@ -618,6 +645,119 @@ export class Fxapis {
    */
   async getCopyExecutions(options: RequestOptions = {}) {
     return this.request("GET", `/v1/copy/executions`, undefined, options);
+  }
+
+  /** Markets with daily official data */
+  async getMarketlabsMarkets(options: RequestOptions = {}) {
+    return this.request("GET", `/v1/marketlabs/markets`, undefined, options);
+  }
+
+  /** Currencies and pairs a watchlist can hold */
+  async getMarketlabsPairs(options: RequestOptions = {}) {
+    return this.request("GET", `/v1/marketlabs/pairs`, undefined, options);
+  }
+
+  /** This workspace's watchlist */
+  async getMarketlabsWatchlist(options: RequestOptions = {}) {
+    return this.request("GET", `/v1/marketlabs/watchlist`, undefined, options);
+  }
+
+  /**
+   * Today for you: your positions, events and research for the next hours — Events in the next `hours` (default 48) for your held and watched currencies, your open positions and pending orders against them (needs `trading:read` as well), each pair's research lean, and what changed in the last 24 hours. Research, not trading advice.
+   *
+   * Query (`options.query`): `hours`, `timeZone`.
+   */
+  async getMarketlabsToday(options: RequestOptions = {}) {
+    return this.request("GET", `/v1/marketlabs/today`, undefined, options);
+  }
+
+  /** Stored daily candles for a market, replayed */
+  async getMarketlabsMarketsBySymbolReplay(symbol: string, options: RequestOptions = {}) {
+    return this.request("GET", `/v1/marketlabs/markets/${encodeURIComponent(symbol)}/replay`, undefined, options);
+  }
+
+  /** Daily official candles for a market */
+  async getMarketlabsMarketsBySymbolCandles(symbol: string, options: RequestOptions = {}) {
+    return this.request("GET", `/v1/marketlabs/markets/${encodeURIComponent(symbol)}/candles`, undefined, options);
+  }
+
+  /** A market's reference rate, volatility, positioning and events over time */
+  async getMarketlabsMarketsBySymbolSeries(symbol: string, options: RequestOptions = {}) {
+    return this.request("GET", `/v1/marketlabs/markets/${encodeURIComponent(symbol)}/series`, undefined, options);
+  }
+
+  /** Relative currency strength */
+  async getMarketlabsStrength(options: RequestOptions = {}) {
+    return this.request("GET", `/v1/marketlabs/strength`, undefined, options);
+  }
+
+  /** Correlation between pairs */
+  async getMarketlabsCorrelation(options: RequestOptions = {}) {
+    return this.request("GET", `/v1/marketlabs/correlation`, undefined, options);
+  }
+
+  /** Recent headlines */
+  async getMarketlabsNews(options: RequestOptions = {}) {
+    return this.request("GET", `/v1/marketlabs/news`, undefined, options);
+  }
+
+  /** Freshness of each data source */
+  async getMarketlabsSources(options: RequestOptions = {}) {
+    return this.request("GET", `/v1/marketlabs/sources`, undefined, options);
+  }
+
+  /**
+   * Official economic calendar with figures
+   *
+   * Query (`options.query`): `currencies`, `from`, `to`, `kind`, `impact`.
+   */
+  async getMarketlabsEvents(options: RequestOptions = {}) {
+    return this.request("GET", `/v1/marketlabs/events`, undefined, options);
+  }
+
+  /** Latest shared intelligence for a market — A cached snapshot shared by every workspace. */
+  async getMarketlabsMarketsBySymbolIntelligence(symbol: string, options: RequestOptions = {}) {
+    return this.request("GET", `/v1/marketlabs/markets/${encodeURIComponent(symbol)}/intelligence`, undefined, options);
+  }
+
+  /** Events attached to the latest shared snapshot */
+  async getMarketlabsMarketsBySymbolEvents(symbol: string, options: RequestOptions = {}) {
+    return this.request("GET", `/v1/marketlabs/markets/${encodeURIComponent(symbol)}/events`, undefined, options);
+  }
+
+  /** This workspace's MarketLabs settings */
+  async getMarketlabsSettings(options: RequestOptions = {}) {
+    return this.request("GET", `/v1/marketlabs/settings`, undefined, options);
+  }
+
+  /** Change this workspace's watchlist and settings */
+  async patchMarketlabsSettings(body: unknown, options: RequestOptions = {}) {
+    return this.request("PATCH", `/v1/marketlabs/settings`, body, options);
+  }
+
+  /** Today's research for a market — Research, not trading advice: it places no trade. Confidence is scored against the outcome after the fact. */
+  async getMarketlabsMarketsBySymbolResearch(symbol: string, options: RequestOptions = {}) {
+    return this.request("GET", `/v1/marketlabs/markets/${encodeURIComponent(symbol)}/research`, undefined, options);
+  }
+
+  /** Past research reports */
+  async getMarketlabsResearch(options: RequestOptions = {}) {
+    return this.request("GET", `/v1/marketlabs/research`, undefined, options);
+  }
+
+  /** Research hit rate, per pair and horizon — Empty until a pair and horizon has reached the minimum number of scored calls. */
+  async getMarketlabsResearchTrackrecord(options: RequestOptions = {}) {
+    return this.request("GET", `/v1/marketlabs/research/track-record`, undefined, options);
+  }
+
+  /** Research hit rate, by confidence level */
+  async getMarketlabsResearchCalibration(options: RequestOptions = {}) {
+    return this.request("GET", `/v1/marketlabs/research/calibration`, undefined, options);
+  }
+
+  /** One research report, in full */
+  async getMarketlabsResearchById(id: string, options: RequestOptions = {}) {
+    return this.request("GET", `/v1/marketlabs/research/${encodeURIComponent(id)}`, undefined, options);
   }
 
   /** The available plans — The plans on offer now: what each includes and what it costs. Prices are in minor units — `9900` is $99.00, never a float. */
